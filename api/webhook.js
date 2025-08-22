@@ -1,4 +1,4 @@
-// api/webhook.js - Proxy Vercel pour filtrer les webhooks WhatsApp
+// api/webhook.js - Proxy Vercel pour filtrer les webhooks WhatsApp (OPTIMISÉ)
 export default async function handler(req, res) {
   // Configuration CORS pour les requêtes Meta
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     try {
       const data = req.body;
       
-      console.log('📦 Données webhook reçues:', JSON.stringify(data, null, 2));
+      console.log('📦 Données webhook reçues');
 
       // Vérifier la structure du webhook
       const entry = data?.entry?.[0];
@@ -44,9 +44,7 @@ export default async function handler(req, res) {
         return res.status(200).send('received');
       }
 
-      // === FILTRAGE INTELLIGENT ===
-      
-      // 1. Vérifier s'il y a des STATUTS (delivered, sent, read)
+      // === FILTRAGE PRIORITÉ 1 : STATUTS ===
       const statuses = value.statuses;
       if (statuses && statuses.length > 0) {
         console.log('🚫 STATUT DÉTECTÉ - IGNORÉ');
@@ -55,27 +53,64 @@ export default async function handler(req, res) {
         return res.status(200).send('received');
       }
 
-      // 2. Vérifier s'il y a des MESSAGES
+      // === FILTRAGE PRIORITÉ 2 : MESSAGES VIDES ===
       const messages = value.messages;
       if (!messages || messages.length === 0) {
         console.log('❌ Pas de messages - webhook ignoré');
         return res.status(200).send('received');
       }
 
-      // 3. Vérifier le type de message
       const message = messages[0];
       if (!message || ['system', 'unsupported'].includes(message.type)) {
         console.log('🚫 Type de message non supporté:', message?.type);
         return res.status(200).send('received');
       }
 
-      // === MESSAGE VALIDE - TRANSFERT VERS N8N ===
-      console.log('✅ MESSAGE CLIENT DÉTECTÉ');
-      console.log('📱 De:', message.from);
-      console.log('💬 Texte:', message.text?.body);
+      // === FILTRAGE PRIORITÉ 3 : ANTI-BOUCLE ===
+      const messageFrom = message.from;
+      const businessPhoneId = "724478677421200"; // Votre Phone Number ID
+      const businessDisplayNumber = "33143052094"; // Votre numéro d'affichage
+
+      console.log('🔍 Vérification anti-boucle');
+      console.log('📱 Message de:', messageFrom);
+      console.log('🏢 Business ID:', businessPhoneId);
+      console.log('📞 Business Display:', businessDisplayNumber);
+
+      // Bloquer les messages DE votre business (boucle)
+      if (messageFrom === businessPhoneId || messageFrom === businessDisplayNumber) {
+        console.log('🔄 MESSAGE DU BUSINESS - BOUCLE DÉTECTÉE - IGNORÉ');
+        console.log('📊 ÉCONOMIE: Boucle évitée !');
+        return res.status(200).send('received');
+      }
+
+      // === FILTRAGE PRIORITÉ 4 : DÉDUPLICATION ===
+      const messageText = message.text?.body || '';
+      const messageId = message.id || `${messageFrom}_${message.timestamp}_${messageText.slice(0, 10)}`;
+      
+      // Initialiser le cache global s'il n'existe pas
+      if (!global.recentMessages) {
+        global.recentMessages = new Map();
+      }
+
+      // Vérifier si déjà traité dans les 60 dernières secondes
+      if (global.recentMessages.has(messageId)) {
+        console.log('🔄 MESSAGE DÉJÀ TRAITÉ - IGNORÉ');
+        console.log('🆔 ID:', messageId);
+        return res.status(200).send('received');
+      }
+
+      // Marquer comme traité
+      global.recentMessages.set(messageId, Date.now());
+      setTimeout(() => global.recentMessages.delete(messageId), 60000);
+
+      // === MESSAGE CLIENT VALIDE - TRANSFERT VERS N8N ===
+      console.log('✅ MESSAGE CLIENT VALIDE DÉTECTÉ');
+      console.log('📱 De:', messageFrom);
+      console.log('💬 Texte:', messageText.substring(0, 50) + '...');
+      console.log('🆔 ID unique:', messageId);
       console.log('🚀 TRANSFERT vers n8n...');
 
-      // URL de votre webhook n8n (à remplacer)
+      // URL de votre webhook n8n
       const N8N_WEBHOOK_URL = 'https://sidiyedali78.app.n8n.cloud/webhook/whatsapp-webhook';
 
       // Transférer vers n8n
@@ -89,8 +124,10 @@ export default async function handler(req, res) {
 
       if (n8nResponse.ok) {
         console.log('✅ Webhook transféré avec succès vers n8n');
+        console.log('📊 RÉSULTAT: 1 exécution n8n au lieu de plusieurs !');
       } else {
         console.log('❌ Erreur lors du transfert vers n8n:', n8nResponse.status);
+        console.log('📄 Réponse n8n:', await n8nResponse.text());
       }
 
       // Toujours répondre "received" à Meta
@@ -103,5 +140,6 @@ export default async function handler(req, res) {
   }
 
   // Méthode non supportée
+  console.log('❌ Méthode non supportée:', req.method);
   return res.status(405).send('Method Not Allowed');
 }
