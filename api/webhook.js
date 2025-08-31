@@ -111,7 +111,8 @@ export default async function handler(req, res) {
       console.log('🚀 TRANSFERT vers n8n...');
 
       // URL de votre webhook n8n
-      const N8N_WEBHOOK_URL = 'https://sidiyedali78.app.n8n.cloud/webhook/whatsapp-webhook';
+  //    const N8N_WEBHOOK_URL = 'https://sidiyedali78.app.n8n.cloud/webhook/whatsapp-webhook';
+       const N8N_WEBHOOK_URL = 'https://n8n.innovai-consulting.com/webhook/whatsapp-webhook';
 
       // Transférer vers n8n
       const n8nResponse = await fetch(N8N_WEBHOOK_URL, {
